@@ -1,0 +1,37 @@
+name: tg-round0
+
+# 一次性：第 0 轮开奖公告
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: send round 0 recap
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+        run: |
+          cat > /tmp/msg.json <<'JSON'
+          {
+            "chat_id": "__CHAT__",
+            "parse_mode": "HTML",
+            "disable_web_page_preview": true,
+            "text": "<b>STREAK · 第 0 轮已开奖</b>\n\n票数：1 / 100\n奖池：1.00 USDT\n一等奖：0.30 USDT → <code>0x0F7F…D462</code>\n二等奖：0.02 × 10 份（本轮只有 1 位玩家，按规则重复计入同一地址）\n滚存进余烬：0.40 USDT\n平台费：0.10 USDT\n\n合计 1.00 USDT —— 与奖池分毫不差，链上可查。\n\n<b>奖金需要手动领取</b>\n合约用 pull 模式，奖金不会自动打进钱包，需要自己调一次：\n\n<code>lottery.write.claim([0])</code>\n\n查询待领：<code>lottery.read.prize([0, 你的地址])</code>\n当前待领：0.50 USDT\n官网已加「领奖」说明：https://streak.pangusys.com/#claim\n\n<b>关于那 97 分钟的延迟，说明一下</b>\n关票时间 20:00，实际结算 21:37，晚了 1 小时 37 分。\n原因在我们这边的定时任务被推迟，不是合约问题——金额、比例、随机数全部正确，资金守恒精确到 wei。\n已改为「自我续跑」机制，keeper 不再依赖外部调度器，之后不会再出现这种空窗。\n\n补充一点：从关票 1 小时后起，<b>任何人都能调 closeRoundByAnyone()</b> 推进轮次。这个游戏不依赖我们在线。\n\n第 1 轮正在进行：0 / 100 票，11-05 20:00 关票。"
+          }
+          JSON
+          python3 - <<'PY'
+          import json, os
+          p = '/tmp/msg.json'
+          d = json.load(open(p))
+          d['chat_id'] = os.environ['TG_CHAT']
+          json.dump(d, open(p, 'w'), ensure_ascii=False)
+          print('payload 组装完成，长度', len(open(p, encoding='utf-8').read()))
+          PY
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/msg.json -o /tmp/res.json
+          python3 -c "import json;d=json.load(open('/tmp/res.json'));print('发送结果:', 'OK' if d.get('ok') else d)"
