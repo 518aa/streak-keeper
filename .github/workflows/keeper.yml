@@ -1,0 +1,58 @@
+name: keeper
+
+# 自我续跑（self-chaining）：
+#   GitHub 对 schedule 有严重降频（实测 6-8 小时才跑一次），
+#   所以本 job 在结束前用内置 GITHUB_TOKEN 主动 dispatch 下一次运行，
+#   形成不间断的链条；schedule 只作为最后一道保险。
+#   并发组保证同一时刻只有一个 keeper 在跑。
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      chain:
+        description: "结束时是否续跑下一次"
+        default: "yes"
+
+permissions:
+  actions: write      # 必需：用内置 GITHUB_TOKEN 触发下一次运行
+  contents: read
+
+concurrency:
+  group: keeper
+  cancel-in-progress: false
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --no-audit --no-fund
+
+      - name: keeper loop (5h20m, tick every 5 min)
+        env:
+          KEEPER_PK: ${{ secrets.KEEPER_PK }}
+          SEED_SECRET: ${{ secrets.SEED_SECRET }}
+          LOTTERY_ADDRESS: ${{ vars.LOTTERY_ADDRESS }}
+          PROVIDER_ADDRESS: ${{ vars.PROVIDER_ADDRESS }}
+          RPC_URL: ${{ vars.RPC_URL }}
+        run: |
+          END=$((SECONDS + 19200))
+          while [ $SECONDS -lt $END ]; do
+            node keeper.mjs || echo "tick failed, continuing"
+            sleep 300
+          done
+
+      - name: chain next run
+        if: always() && (github.event.inputs.chain == '' || github.event.inputs.chain == 'yes')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "派发下一次 keeper 运行…"
+          gh workflow run keeper.yml --repo "${{ github.repository }}" -f chain=yes
+          echo "✓ 已派发"

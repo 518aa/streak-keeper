@@ -1,0 +1,34 @@
+name: tg-test
+
+# 一次性测试：给群里发一条上线通告，确认机器人能发消息
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: send hello
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+        run: |
+          TEXT='<b>STREAK 战报机器人已上线</b>
+
+          这个群以后会自动收到每轮开奖播报：
+          · 票数 / 奖池 / 一等奖得主
+          · 随机种子（任何人可用 roundProof 复算）
+          · 空轮也会播报——因为「到点必开」是规则
+
+          第 0 轮今晚 20:00（北京时间）关票开奖。
+
+          https://streak.pangusys.com'
+          curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${TG_CHAT}\",\"text\":\"${TEXT}\",\"parse_mode\":\"HTML\",\"disable_web_page_preview\":true}" \
+            -o /tmp/res.json
+          cat /tmp/res.json | head -c 500
+          echo ""
+          python3 -c "import json;d=json.load(open('/tmp/res.json'));print('发送结果:', 'OK' if d.get('ok') else d)"

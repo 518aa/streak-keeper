@@ -1,0 +1,47 @@
+name: tg-id
+
+# 临时工具：查出 Telegram 群/频道的 chat id
+# 用法：先把 @Tetris2089Bot 拉进群，在群里随便发一条消息，然后手动运行本 workflow
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: getMe
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+        run: |
+          echo "=== bot 身份 ==="
+          curl -s "https://api.telegram.org/bot${TG_TOKEN}/getMe" | head -c 600
+          echo ""
+      - name: getUpdates
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+        run: |
+          echo "=== 最近的更新（找 chat.id）==="
+          curl -s "https://api.telegram.org/bot${TG_TOKEN}/getUpdates?limit=20" > /tmp/upd.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open('/tmp/upd.json'))
+          if not d.get('ok'):
+              print('API 返回错误:', json.dumps(d, ensure_ascii=False)[:400])
+              raise SystemExit(0)
+          res = d.get('result', [])
+          print(f'共 {len(res)} 条更新')
+          seen = {}
+          for u in res:
+              msg = u.get('message') or u.get('channel_post') or u.get('my_chat_member') or {}
+              chat = msg.get('chat') or {}
+              if not chat:
+                  continue
+              cid = chat.get('id')
+              seen[cid] = (chat.get('type'), chat.get('title') or chat.get('username') or chat.get('first_name'))
+          if not seen:
+              print('还没有任何消息 —— 请把 bot 拉进群，并在群里发一条消息后重跑')
+          for cid, (typ, name) in seen.items():
+              print(f'chat_id = {cid}   type={typ}   name={name}')
+          PY

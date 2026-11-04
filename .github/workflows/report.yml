@@ -1,0 +1,45 @@
+name: report
+
+# 战报：轮次结算后发到 Telegram
+# 同样用「长任务内循环」，避开 GitHub schedule 降频
+
+on:
+  schedule:
+    - cron: "20 */6 * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: report
+  cancel-in-progress: false
+
+jobs:
+  loop:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci --no-audit --no-fund
+
+      # 已发送过的轮次需要跨 job 持久化
+      - uses: actions/cache@v4
+        with:
+          path: .report-state.json
+          key: report-state-${{ github.run_id }}
+          restore-keys: report-state-
+
+      - name: report loop (5h40m, check every 5 min)
+        env:
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+          LOTTERY_ADDRESS: ${{ vars.LOTTERY_ADDRESS }}
+          RPC_URL: ${{ vars.RPC_URL }}
+          SITE_URL: ${{ vars.SITE_URL }}
+        run: |
+          END=$((SECONDS + 20400))
+          while [ $SECONDS -lt $END ]; do
+            node report.mjs || echo "report tick failed, continuing"
+            sleep 300
+          done
